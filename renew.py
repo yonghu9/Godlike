@@ -27,27 +27,6 @@ MAX_RETRIES_PER_ID = 20         # 每个 ID 最大重试次数（含换 IP）
 SCREENSHOT_DIR = "output/screenshots"
 
 # ============================================================
-# 随机人名生成（符合 Minecraft 用户名规则：字母/数字/下划线，3-16位）
-# ============================================================
-FIRST_NAMES = [
-    "Alex", "Blake", "Casey", "Dana", "Ellis",
-    "Finn", "Gray", "Harper", "Indigo", "Jordan",
-    "Kai", "Lane", "Morgan", "Nova", "Owen",
-    "Parker", "Quinn", "Reese", "Sage", "Taylor",
-    "Uma", "Vale", "Wren", "Xander", "Yael", "Zion",
-    "Liam", "Emma", "Noah", "Olivia", "Ethan",
-    "Ava", "Mason", "Sophia", "Logan", "Isabella",
-]
-
-def random_username() -> str:
-    """生成随机用户名：名字 + 1-4位数字，总长度 ≤ 16"""
-    name = random.choice(FIRST_NAMES)
-    suffix = str(random.randint(1, 9999))
-    username = name + suffix
-    # 确保不超过16位
-    return username[:16]
-
-# ============================================================
 # 日志
 # ============================================================
 def log(msg: str, level: str = "INFO"):
@@ -104,8 +83,7 @@ def send_tg_photo(token: str, chat_id: str, photo_path: str, caption: str):
         log(f"Telegram 文本通知也失败: {e}", "ERROR")
 
 
-def build_caption(status: str, godlike_id: str, username: str,
-                  reason: str = "") -> str:
+def build_caption(status: str, godlike_id: str, reason: str = "") -> str:
     """构建通知文本
     status: 'success' | 'maxed' | 'cooldown' | 'failure'
     """
@@ -120,7 +98,7 @@ def build_caption(status: str, godlike_id: str, username: str,
     else:
         title = "❌ 续订失败"
     
-    lines = [title, "", f"URL: {url}", f"用户名: {username}"]
+    lines = [title, "", f"URL: {url}"]
     if reason and status == "failure":
         lines.append(f"原因: {reason}")
     lines += ["", "Godlike Host Auto Renew"]
@@ -521,7 +499,7 @@ def build_page() -> ChromiumPage:
 # 单个 ID 续期
 # ============================================================
 def renew_single_id(godlike_id: str, tg_token: str, tg_chat_id: str):
-    """对单个 Godlike ID 执行续期，包含换 IP 重试"""
+    """对单个 Godlike ID 执行续期，包含换 IP 重试，不填用户名"""
     page_url = f"{BASE_URL}/{godlike_id}"
     log(f"{'='*60}")
     log(f"处理账号: {page_url}")
@@ -530,8 +508,6 @@ def renew_single_id(godlike_id: str, tg_token: str, tg_chat_id: str):
     success = False
     failure_reason = ""
     screenshot_path = None
-    username = random_username()
-    log(f"生成用户名: {username}")
 
     for attempt in range(1, MAX_RETRIES_PER_ID + 1):
         log(f"--- 尝试 {attempt}/{MAX_RETRIES_PER_ID} ---")
@@ -551,24 +527,7 @@ def renew_single_id(godlike_id: str, tg_token: str, tg_chat_id: str):
                 log(failure_reason, "WARN")
                 continue
 
-            # ── 2. 填写用户名 ────────────────────────────────
-            # 每次重试都随机生成新用户名
-            username = random_username()
-            log(f"填写用户名: {username}")
-            
-            username_input = page.ele('xpath://input[@name="username"]', timeout=5)
-            if not username_input:
-                failure_reason = "未找到用户名输入框"
-                log(failure_reason, "ERROR")
-                break
-
-            username_input.click()
-            time.sleep(random.uniform(0.3, 0.8))
-            username_input.clear()
-            username_input.input(username)
-            time.sleep(random.uniform(0.5, 1.0))
-
-            # ── 3. 模拟人类行为 ──────────────────────────────
+            # ── 2. 模拟人类行为（不触碰任何输入框）────────────
             for _ in range(2):
                 page.scroll.down(random.randint(100, 300))
                 time.sleep(random.uniform(0.5, 1.2))
@@ -578,7 +537,7 @@ def renew_single_id(godlike_id: str, tg_token: str, tg_chat_id: str):
                 )
                 time.sleep(random.uniform(0.3, 0.8))
 
-            # ── 4. 破解 reCAPTCHA ────────────────────────────
+            # ── 3. 破解 reCAPTCHA ────────────────────────────
             log("开始破解 reCAPTCHA...")
             try:
                 solved = solve_recaptcha(page)
@@ -613,7 +572,7 @@ def renew_single_id(godlike_id: str, tg_token: str, tg_chat_id: str):
                 time.sleep(5)
                 continue
 
-            # ── 5. 提交表单 ──────────────────────────────────
+            # ── 4. 提交表单 ──────────────────────────────────
             log("reCAPTCHA 通过，点击 Renew Server 提交...")
             submit_btn = page.ele('xpath://button[@type="submit"]', timeout=5)
             if not submit_btn:
@@ -628,7 +587,7 @@ def renew_single_id(godlike_id: str, tg_token: str, tg_chat_id: str):
             except Exception:
                 submit_btn.click(by_js=True)
 
-            # ── 6. 等待结果 ──────────────────────────────────
+            # ── 5. 等待结果 ──────────────────────────────────
             time.sleep(8)
             result_html = page.html or ""
 
@@ -714,7 +673,7 @@ def renew_single_id(godlike_id: str, tg_token: str, tg_chat_id: str):
                 except Exception:
                     pass
 
-    # ── 7. 发送 Telegram 通知 ──────────────────────────────
+    # ── 6. 发送 Telegram 通知 ──────────────────────────────
     if 'final_status' not in locals():
         if success:
             final_status = "success"
@@ -728,7 +687,6 @@ def renew_single_id(godlike_id: str, tg_token: str, tg_chat_id: str):
     caption = build_caption(
         status=final_status,
         godlike_id=godlike_id,
-        username=username,
         reason=failure_reason,
     )
     send_tg_photo(tg_token, tg_chat_id, screenshot_path, caption)
@@ -762,18 +720,15 @@ def main():
     # ── 处理手动输入的指定 ID ───────────────────────────────
     if raw_ids_input:
         input_ids = parse_ids(raw_ids_input)
-
+        
         # 校验：输入的 ID 必须存在于 Secret 中
         invalid = [i for i in input_ids if i not in all_ids]
         if invalid:
             log(f"以下 ID 不在 GODLIKE_ID 中，已忽略: {invalid}", "WARN")
-
         godlike_id = [i for i in input_ids if i in all_ids]
-
         if not godlike_id:
             log("指定的 ID 全部无效，退出", "ERROR")
             sys.exit(1)
-
         log(f"手动指定模式，共 {len(godlike_id)} 个账号: {godlike_id}")
     else:
         godlike_id = all_ids
